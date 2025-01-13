@@ -64,9 +64,9 @@ func printHelp() {
 	fmt.Println("  - 使用 -clear 参数清除文件扩展名中的非字母字符。")
 	fmt.Println("  - 扩展名参数可以不带 '.'，程序会自动补充。")
 	fmt.Println("示例:")
-	fmt.Println("  go run main.go -old .txt -new .md  # 将所有 .txt 文件改为 .md")
-	fmt.Println("  go run main.go -new .md            # 将所有文件改为 .md 扩展名")
-	fmt.Println("  go run main.go -clear              # 清除所有文件扩展名中的非字母字符")
+	fmt.Println("  rename-ext -old .txt -new .md  # 将所有 .txt 文件改为 .md")
+	fmt.Println("  rename-ext -new .md            # 将所有文件改为 .md 扩展名")
+	fmt.Println("  rename-ext -clear              # 清除所有文件扩展名中的非字母字符")
 }
 
 // 解析命令行参数
