@@ -151,10 +151,8 @@ func replaceExtension(dir, oldName, oldExt, newExt string) {
 
 // 重命名文件
 func renameFile(dir, oldName, newName string) {
-	// 如果新文件名的最后一个字符是 '.'，则去掉它
-	if strings.HasSuffix(newName, ".") {
-		newName = strings.TrimSuffix(newName, ".")
-	}
+	// 去掉新文件名的最后一个字符如果是 '.'
+	newName = strings.TrimSuffix(newName, ".")
 
 	oldPath := filepath.Join(dir, oldName)
 	newPath := filepath.Join(dir, newName)
