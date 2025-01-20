@@ -1,7 +1,9 @@
 package main
 
 import (
+	"flag"
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
@@ -9,157 +11,136 @@ import (
 )
 
 func main() {
-	// 获取命令行参数
-	args := os.Args[1:]
 
-	// 检查是否请求帮助
-	if len(args) > 0 && args[0] == "--help" {
-		printHelp()
+	var oldExt = flag.String("old", "", "旧的文件扩展名")
+	var newExt = flag.String("new", "", "新的文件扩展名")
+	var clear = flag.String("clear", "", "清除指定的文件后缀")
+	var clearCN = flag.Bool("clear--zh_CN", false, "清除后缀中的中文字符")
+	flag.Parse()
+	if len(os.Args) == 1 {
+		flag.Usage()
 		return
 	}
+	// fmt.Println(*oldExt, *newExt, *clear, *clearCN)
 
-	var oldExt, newExt string
-	clear := false
-	clearChars := "" // 用于存储要清除的字符集
-
-	// 解析参数
-	parseArgs(args, &oldExt, &newExt, &clear, &clearChars)
-
-	// 获取当前工作目录
-	dir, err := os.Getwd()
+	cur, err := os.Getwd()
 	if err != nil {
 		log.Fatal(err)
 	}
+	files := listFiles(cur)
+	// 根据不同的参数去各自处理
+	if *clearCN {
+		handleClearCN(files, cur)
+	} else if *clear != "" {
+		handleClear(files, cur, *clear)
+	} else if *oldExt != "" || *newExt != "" {
+		handleRepalce(files, cur, *oldExt, *newExt)
+	}
+}
 
-	// 使用 os.ReadDir 读取目录中的文件
-	files, err := os.ReadDir(dir)
+func handleRepalce(files []fs.DirEntry, workspace, oldExt, newExt string) {
+	if oldExt == newExt {
+		return
+	}
+	if oldExt == "" {
+		log.Fatal("-old 或 -new 不能为空")
+	}
+	if newExt == "" {
+		log.Fatal("-old 或 -new 不能为空")
+	}
+	if newExt == "." {
+		log.Fatal("-new 参数不能为'.'")
+	}
+	for _, item := range files {
+		name := item.Name()
+		dotIndex := strings.LastIndex(name, ".")
+		if dotIndex != -1 {
+			ext := name[dotIndex:]
+			if strings.HasSuffix(ext, oldExt) {
+				finalExt := strings.ReplaceAll(ext, oldExt, newExt)
+				if finalExt[0] != '.' {
+					finalExt = "." + finalExt
+				}
+				if finalExt == ext {
+					return
+				}
+				oldname := filepath.Join(workspace, name)
+				newname := filepath.Join(workspace, name[0:dotIndex]+finalExt)
+				fmt.Println(oldname, newname)
+			}
+		}
+	}
+}
+
+func handleClear(files []fs.DirEntry, workspace, clearChars string) {
+	for _, item := range files {
+		name := item.Name()
+		dotIndex := strings.LastIndex(name, ".")
+		if dotIndex != -1 {
+			ext := name[dotIndex:]
+			finalExt := strings.ReplaceAll(ext, clearChars, "")
+
+			if finalExt == ext {
+				return
+			}
+
+			// 构建旧/新路径
+			oldname := filepath.Join(workspace, name)
+			newname := filepath.Join(workspace, name[0:dotIndex]+finalExt)
+			rename(oldname, newname)
+		}
+	}
+}
+
+func handleClearCN(files []fs.DirEntry, workspace string) {
+	for _, item := range files {
+		name := item.Name()
+		dotIndex := strings.LastIndex(name, ".")
+		if dotIndex != -1 {
+			// 获取旧的文件扩展名
+			ext := name[dotIndex:]
+			var finalExt strings.Builder
+			// 清除扩展名称中的非数字和字母
+			for _, c := range ext {
+				if (c == '.') || (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') {
+					finalExt.WriteRune(c)
+				}
+			}
+			// 优化,如果前后扩展名称一致,不需要操作
+			if finalExt.String() == ext {
+				continue
+			}
+			// 构建旧/新名称
+			oldname := filepath.Join(workspace, name)
+			newname := filepath.Join(workspace, name[0:dotIndex]+finalExt.String())
+			// 重名
+			rename(oldname, newname)
+		}
+	}
+}
+
+// 文件重命名
+func rename(oldname, newname string) {
+	// 处理新文件名,如果最后一个为'.', 那么自动清除
+	if newname[len(newname)-1] == '.' {
+		newname = newname[0 : len(newname)-1]
+	}
+	os.Rename(oldname, newname)
+	fmt.Println("done", oldname, "==>", newname)
+}
+
+// 获取当前文件夹下的文件,不包括文件夹
+func listFiles(dirname string) []fs.DirEntry {
+	entries, err := os.ReadDir(dirname)
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	// 修改文件扩展名
-	for _, file := range files {
-		if file.IsDir() {
-			continue // 跳过文件夹
-		}
-		oldName := file.Name()
-		// 排除 .go 和 .mod 文件
-		if strings.HasSuffix(oldName, ".go") || strings.HasSuffix(oldName, ".mod") {
-			continue
-		}
-		if clear {
-			clearExtension(dir, oldName, clearChars)
-		} else if oldExt == "" {
-			replaceExtension(dir, oldName, filepath.Ext(oldName), newExt)
-		} else if strings.HasSuffix(oldName, oldExt) {
-			replaceExtension(dir, oldName, oldExt, newExt)
-		}
-	}
-}
-
-// 打印帮助信息
-func printHelp() {
-	fmt.Println("使用说明:")
-	fmt.Println("  - 使用 -old 和 -new 参数指定旧和新扩展名。")
-	fmt.Println("  - 如果只提供 -new 参数：将所有文件的扩展名更改为该参数指定的新扩展名。")
-	fmt.Println("  - 使用 -clear 参数清除文件扩展名中的非字母字符，或指定要清除的字符集。")
-	fmt.Println("  - 扩展名参数可以不带 '.'，程序会自动补充。")
-	fmt.Println("示例:")
-	fmt.Println("  rename-ext -old .txt -new .md  # 将所有 .txt 文件改为 .md")
-	fmt.Println("  rename-ext -new .md            # 将所有文件改为 .md 扩展名")
-	fmt.Println("  rename-ext -clear              # 清除所有文件扩展名中的非字母字符")
-	fmt.Println("  rename-ext -clear 123          # 清除所有文件扩展名中的 '1', '2', '3' 字符")
-}
-
-// 解析命令行参数
-func parseArgs(args []string, oldExt, newExt *string, clear *bool, clearChars *string) {
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "-old":
-			if i+1 < len(args) {
-				*oldExt = args[i+1]
-				if !strings.HasPrefix(*oldExt, ".") {
-					*oldExt = "." + *oldExt
-				}
-				i++
-			} else {
-				log.Fatal("-old 参数后需要指定扩展名")
-			}
-		case "-new":
-			if i+1 < len(args) {
-				*newExt = args[i+1]
-				if !strings.HasPrefix(*newExt, ".") {
-					*newExt = "." + *newExt
-				}
-				i++
-			} else {
-				log.Fatal("-new 参数后需要指定扩展名")
-			}
-		case "-clear":
-			*clear = true
-			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-				*clearChars = args[i+1]
-				i++
-			}
-		default:
-			log.Fatalf("未知参数: %s", args[i])
+	var result []fs.DirEntry
+	for _, item := range entries {
+		if !item.IsDir() {
+			result = append(result, item)
 		}
 	}
 
-	if *newExt == "" && !*clear {
-		log.Fatal("请提供 -new 参数以指定新的文件扩展名或使用 -clear 参数")
-	}
-}
-
-// 清除扩展名中的指定字符
-func clearExtension(dir, oldName, clearChars string) {
-	ext := filepath.Ext(oldName)
-	if len(ext) > 1 { // 确保扩展名长度大于1
-		cleanExt := "." + clearSpecified(ext[1:], clearChars)
-		newName := strings.TrimSuffix(oldName, ext) + cleanExt
-		renameFile(dir, oldName, newName)
-	} else {
-		// 如果没有有效的扩展名，保持原文件名
-		renameFile(dir, oldName, oldName)
-	}
-}
-
-// 根据指定字符集清除字符串中的字符
-func clearSpecified(s, clearChars string) string {
-	var result strings.Builder
-	for _, c := range s {
-		if clearChars == "" {
-			// 默认清除非字母字符
-			if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') {
-				result.WriteRune(c)
-			}
-		} else {
-			// 清除指定字符集中的字符
-			if !strings.ContainsRune(clearChars, c) {
-				result.WriteRune(c)
-			}
-		}
-	}
-	return result.String()
-}
-
-// 替换文件扩展名
-func replaceExtension(dir, oldName, oldExt, newExt string) {
-	newName := strings.TrimSuffix(oldName, oldExt) + newExt
-	renameFile(dir, oldName, newName)
-}
-
-// 重命名文件
-func renameFile(dir, oldName, newName string) {
-	// 去掉新文件名的最后一个字符如果是 '.'
-	newName = strings.TrimSuffix(newName, ".")
-
-	oldPath := filepath.Join(dir, oldName)
-	newPath := filepath.Join(dir, newName)
-	err := os.Rename(oldPath, newPath)
-	if err != nil {
-		log.Printf("无法重命名文件 %s: %v\n", oldName, err)
-	} else {
-		fmt.Printf("文件 %s 已重命名为 %s\n", oldName, newName)
-	}
+	return result
 }
