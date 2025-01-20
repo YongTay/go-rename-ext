@@ -18,7 +18,13 @@ func main() {
 	var clearCN = flag.Bool("clear--zh_CN", false, "清除后缀中的中文字符")
 	flag.Parse()
 	if len(os.Args) == 1 {
+		fmt.Println("Usage: ")
+		fmt.Println("\trename-ext -clear=txt ")
+		fmt.Println("\trename-ext -old=.txt -new=.md ")
+		fmt.Println("\trename-ext -clear--zh_CN ")
 		flag.Usage()
+		fmt.Println()
+		fmt.Println("注意: 文件最终重命名时,如果文件名最后一个字符为'.'时,会自动清除")
 		return
 	}
 	// fmt.Println(*oldExt, *newExt, *clear, *clearCN)
